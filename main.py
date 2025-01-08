@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from astrapy import DataAPIClient
 from collections import defaultdict
+from fastapi.responses import JSONResponse
 
 load_dotenv()
 
@@ -151,6 +152,12 @@ async def chatbot(request: Request):
 @app.get("/average")
 def get_average():
     return averages
+
+
+@app.head("/health")
+async def health_check():
+    # Returning headers with a successful response
+    return JSONResponse(content="working", status_code=200)
 
 
 # res = run_flow("what insights do you have about reels?")
