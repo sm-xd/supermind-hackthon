@@ -1,11 +1,15 @@
 # Note: Replace **<YOUR_APPLICATION_TOKEN>** with your actual Application token
 import requests
+import os
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
+
+load_dotenv()
 
 BASE_API_URL = "https://api.langflow.astra.datastax.com"
 LANGFLOW_ID = "b9ad0c0e-c8f6-4eb4-b7fc-30a1440aa858"
 FLOW_ID = "50f02306-32c7-46f4-aa51-10af913d0a7b"
-APPLICATION_TOKEN = "AstraCS:XbnIFkXJtvGrsGBNpJsHImyH:2290fdd3ff5a886b333eaebfa4fa83ec08ec6490352194049455090d5d2fe49d"
+APPLICATION_TOKEN = os.environ.get("APP_TOKEN")
 ENDPOINT = "socialchat" # You can set a specific endpoint name in the flow settings
 
 def run_flow(message: str,
@@ -55,7 +59,7 @@ async def chatbot(request: Request):
             .get('message', {})
             .get('text', 'Sorry, I did not understand that.')
         )
-        print(message_data)
+        # print(message_data)
         # Send the chatbot response back to the frontend
         return {"reply": message_data}
 
