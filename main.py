@@ -6,6 +6,7 @@ from fastapi import FastAPI, HTTPException, Request
 from astrapy import DataAPIClient
 from collections import defaultdict
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
 
@@ -42,7 +43,13 @@ def run_flow(
 # Create a FastAPI application
 app = FastAPI()
 
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Origins allowed
+    allow_credentials=True,  # Allow credentials like cookies
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 client = DataAPIClient(token)
 
 # Connect to your Astra DB using the API endpoint
