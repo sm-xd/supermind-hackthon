@@ -1,12 +1,20 @@
-# Note: Replace **<YOUR_APPLICATION_TOKEN>** with your actual Application token
 import requests
 import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from astrapy import DataAPIClient
-from collections import defaultdict
+
+# from astrapy import DataAPIClient
+# from collections import defaultdict
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from cassandra.cluster import Cluster
+from cassandra.auth import PlainTextAuthProvider
+
+# import pandas as pd
+import json
+from statistics import mean
+from pydantic import BaseModel
+
 
 load_dotenv()
 
@@ -50,72 +58,87 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
-client = DataAPIClient(token)
-
-# Connect to your Astra DB using the API endpoint
-db = client.get_database_by_api_endpoint(api_endpoint)
-
-# Test the connection by listing collection names
-print(f"Connected to Astra DB: {db.list_collection_names()}")
 
 
-client = DataAPIClient(token)
+class PostStats(BaseModel):
+    post_type: str
+    count: int
+    avg_likes: float
+    avg_comments: float
+    avg_shares: float
+    avg_views: float
 
-# Connect to your Astra DB using the API endpoint
-db = client.get_database_by_api_endpoint(api_endpoint)
 
-# Specify the collection you want to query (e.g., "posts")
-collection_name = "test"
+cloud_config = {"secure_connect_bundle": "secure-connect-social-data.zip"}
 
-# Retrieve all documents from the collection
-documents = db.get_collection(collection_name).find()
+with open("social_data-token.json") as f:
+    secrets = json.load(f)
 
-# Initialize a dictionary to store the sums and counts for each post type
-aggregation = defaultdict(
-    lambda: {"likes": 0, "shares": 0, "comments": 0, "views": 0, "count": 0}
-)
-myList = []
-for document in documents:
-    myList.append(document)
+CLIENT_ID = secrets["clientId"]
+CLIENT_SECRET = secrets["secret"]
 
-aggregation = defaultdict(
-    lambda: {"likes": 0, "shares": 0, "comments": 0, "views": 0, "count": 0}
-)
+auth_provider = PlainTextAuthProvider(CLIENT_ID, CLIENT_SECRET)
+cluster = Cluster(cloud=cloud_config, auth_provider=auth_provider)
+session = cluster.connect()
 
-# Iterate through each document
-for data in myList:
-    # Split the content field by line breaks to get individual posts
-    lines = document["content"].strip().split("\n")
+session.set_keyspace("test")
+# df = pd.read_csv("mock_social_media_data.csv")
 
-    # Iterate through each line (post) and extract the fields
-    for line in lines:
-        parts = line.split(",")
+# insert_query = """
+# INSERT INTO test.social_media_data ("Post_ID", "Comments", "Likes", "Post_Type", "Shares", "Views")
+# VALUES (%s, %s, %s, %s, %s, %s);
+# """
 
-        # Extract the individual fields
-        post_id = parts[0]
-        post_type = parts[1]
-        views = int(parts[2])
-        likes = int(parts[3])
-        shares = int(parts[4])
-        comments = int(parts[5])
 
-        # Aggregate the values by Post_Type
-        aggregation[post_type]["likes"] += likes
-        aggregation[post_type]["shares"] += shares
-        aggregation[post_type]["comments"] += comments
-        aggregation[post_type]["views"] += views
-        aggregation[post_type]["count"] += 1
+# # insert_query = "INSERT INTO social_media_data (post_id,post_type,views,likes,shares,comments) VALUES (%s, %s, %s, %s, %s, %s);"
+# for _, row in df.iterrows():
+#     session.execute(insert_query, tuple(row))
 
-# Calculate the averages for each Post_Type
-averages = {}
-for post_type, values in aggregation.items():
-    if values["count"] > 0:
-        averages[post_type] = {
-            "avg_likes": values["likes"] / values["count"],
-            "avg_shares": values["shares"] / values["count"],
-            "avg_comments": values["comments"] / values["count"],
-            "avg_views": values["views"] / values["count"],
+
+query = """
+SELECT "Post_Type", "Likes", "Comments", "Shares", "Views"
+FROM test.social_media_data
+"""
+rows = session.execute(query)
+
+# Group data by post type
+post_types = {}
+for row in rows:
+    post_type = row.Post_Type
+    if post_type not in post_types:
+        post_types[post_type] = {
+            "likes": [],
+            "comments": [],
+            "shares": [],
+            "views": [],
+            "count": 0,
         }
+
+    # Add data to the appropriate post type
+    post_types[post_type]["likes"].append(row.Likes)
+    post_types[post_type]["comments"].append(row.Comments)
+    post_types[post_type]["shares"].append(row.Shares)
+    post_types[post_type]["views"].append(row.Views)
+    post_types[post_type]["count"] += 1
+
+# Prepare the result
+result = []
+for post_type, stats in post_types.items():
+    avg_likes = mean(stats["likes"]) if stats["likes"] else 0
+    avg_comments = mean(stats["comments"]) if stats["comments"] else 0
+    avg_shares = mean(stats["shares"]) if stats["shares"] else 0
+    avg_views = mean(stats["views"]) if stats["views"] else 0
+
+    result.append(
+        PostStats(
+            post_type=post_type,
+            count=stats["count"],
+            avg_likes=f"{avg_likes:.2f}",
+            avg_comments=f"{avg_comments:.2f}",
+            avg_shares=f"{avg_shares:.2f}",
+            avg_views=f"{avg_views:.2f}",
+        )
+    )
 
 
 # Define a route at the root web address ("/")
@@ -158,7 +181,12 @@ async def chatbot(request: Request):
 
 @app.get("/average")
 def get_average():
-    return averages
+    data = {
+        "carousel": result[0],
+        "reels": result[1],
+        "static_post": result[2],
+    }
+    return data
 
 
 @app.head("/health")
