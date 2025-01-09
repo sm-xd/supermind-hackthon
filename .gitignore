@@ -36,3 +36,5 @@ pip-delete-this-directory.txt
 
 # Ignore macOS-specific files
 .DS_Store
+
+social*
